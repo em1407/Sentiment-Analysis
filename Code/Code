@@ -1,1 +1,227 @@
-cc
+library(readxl)
+library(tm)
+library(SnowballC)
+library(plyr)
+library(PerformanceAnalytics)
+library(ggplot2)
+
+## The goal of this project is to investigate the impact of customer reviews on restaurant ratings and this will be done through sentiment analysis
+
+# Read the dataset
+RestaurantReviews <- read.csv("C:/Users/emily/Documents/Reviews27.csv")
+
+# Check the structure of the dataframe 
+str(RestaurantReviews)
+
+# overview of the first 10 reviews
+head(RestaurantReviews$review_full, 10)
+
+# overview of the first 10 review titles
+head(RestaurantReviews$title_review, 10)
+
+
+# create a new variables with the amount of characters in each review
+RestaurantReviews$nchar_rev <- nchar(RestaurantReviews$review_full)
+
+# describe and plot the amount of characters per review 
+summary(RestaurantReviews$nchar_rev) 
+#there is a lot of variation in terms of review length, the shortest review is 36 characters while the longest is 3205
+
+hist(RestaurantReviews$nchar_rev) 
+# distribution is very skewed to the left and has a long tail meaning that there are more short reviews than long
+
+
+# create a new variables with the amount of characters in each review title
+RestaurantReviews$nchar_tit <- nchar(RestaurantReviews$title_review)
+
+# describe and plot the amount of characters per review 
+summary(RestaurantReviews$nchar_tit) 
+# titles have a minimun of 2 characters and a maximum of 115
+
+hist(RestaurantReviews$nchar_tit) # as the reviews above, there are more reviews with fewer characters 
+
+
+#find out if the length of the reviews provide insights for the rating
+correlations_rev <- cor(RestaurantReviews$nchar_rev, RestaurantReviews$rating_review) 
+# negative correlation (-0.11) meaning that the longer the review the lower the rating but only slightly
+
+
+#find out if the length of the review title provide insights for the rating
+correlations_tit <- cor(RestaurantReviews$nchar_tit, RestaurantReviews$rating_review) 
+# negative correlation (-0.045). Even though the correlation is negative, it is almost zero meaning no correlation
+
+
+## Step 1: Pre-processing Review Data for Sentiment Analysis
+# Pre-processing is important to make the text consistent
+
+# Convert review text to lowercase for both review_full and review_title
+RestaurantReviews$review_full <- tolower(RestaurantReviews$review_full)
+RestaurantReviews$title_review <- tolower(RestaurantReviews$title_review)
+
+head(RestaurantReviews$review_full, 10)
+
+# Upper cases have been removed because they only represent an unnecessary element of the text which does not provide insights to the sentiment analysis. The sentence "Here you get the best of club and eating." becomes "here you get the best of club and eating."
+
+# remove punctuation from text 
+RestaurantReviews$review_full <- removePunctuation(RestaurantReviews$review_full)
+RestaurantReviews$title_review <- removePunctuation(RestaurantReviews$title_review)
+
+head(RestaurantReviews$review_full, 10)
+
+# Although punctuation is very important for humans to read the text correctly, this is different for computers thus punctuation only creates noise in the corpus as they are non-textual elements. After having removed punctuation the sentence "here you get the best of club and eating. they have the laud music going all the time, and turn it into a night club in th night. the food was amazing. a lot of flavors and a helpful staff. would go back." becomes "here you get the best of club and eating they have the laud music going all the time and turn it into a night club in th night the food was amazing a lot of flavors and a helpful staff would go back"
+
+# remove number from text 
+RestaurantReviews$review_full <- removeNumbers(RestaurantReviews$review_full)
+RestaurantReviews$title_review <- removeNumbers(RestaurantReviews$title_review)
+
+head(RestaurantReviews$review_full, 13)
+
+
+Also numbers do not provide much information thus they are not relevant for this assignment. For instance the sentence "i rarely have the whole family in NYC but we trekked in to remember our days living in NY With three children ages 6-13 we tried the food court at Grand Central but it was packed" becomes ""i rarely have the whole family in nyc but we trekked in to remember our days living in ny with three children ages we tried the food court at grand central but it was packed" In this case the information about children's age was unnecessary. 
+
+# remove unnecessary white space
+RestaurantReviews$review_full <- stripWhitespace(RestaurantReviews$review_full)
+RestaurantReviews$title_review <- stripWhitespace(RestaurantReviews$title_review)
+
+# Double white spaces only creates noise thus these were removed.
+
+# remove potentially problematic symbols 
+RestaurantReviews$review_full <- gsub("[[:punct:]]", " ", RestaurantReviews$review_full)
+RestaurantReviews$title_review <- gsub("[[:punct:]]", " ", RestaurantReviews$title_review)
+
+head(RestaurantReviews$review_full, 10)
+
+
+# Symbols as non-textual data are also removed to provide more consistency. after this change, the sentence "if you want New York pizza eat here its real pizza just really really good! becomes"if you want new york pizza eat here its real pizza just really really good"
+
+# remove stopwords
+stop_words <- stopwords("english")
+RestaurantReviews$review_full <- removeWords(RestaurantReviews$review_full, stopwords("english"))
+RestaurantReviews$title_review <- removeWords(RestaurantReviews$title_review, stopwords("english"))
+
+head(RestaurantReviews$review_full, 10)
+
+# Removing stopwords can be done as these words do not rpovide much information to the corpus, after this passage, the reviews are a lot shorter. For example ""some of the best mexican food i have ever had and awesome drinks ive tasted almost everything on the menu and have never been disappointed the music is loud and fun the lighting is dark and intimate" " becomes "  best mexican food   ever   awesome drinks ive tasted almost everything   menu   never  disappointed  music  loud  fun  lighting  dark  intimate". Here words such as 'some of', 'have had', articles and connecting words have been removed. 
+
+# Stemming 
+RestaurantReviews$review_full <- stemDocument(RestaurantReviews$review_full, language = "english")
+RestaurantReviews$title_review <- stemDocument(RestaurantReviews$title_review, language = "english")
+
+head(RestaurantReviews$review_full, 10)
+
+# Step 2: extract sentiment from the pre processed data using sentiment r
+
+library(sentimentr)
+
+# Perform sentiment analysis on the review_full column using sentimentr
+sentiment_scores_review_full <- sentiment(RestaurantReviews$review_full)
+
+# Perform sentiment analysis on the title_review column
+sentiment_scores_title_review <- sentiment(RestaurantReviews$title_review)
+
+# Add sentiment scores to the dataframe
+RestaurantReviews$sentiment_score_review_full <- sentiment_scores_review_full$sentiment
+RestaurantReviews$sentiment_score_title_review <- sentiment_scores_title_review$sentiment
+
+summary(sentiment_scores_review_full) 
+# Using Sentimentr the reviews' sentiment ranges from -8 to 1.8
+
+summary(sentiment_scores_title_review) 
+# Using Sentimentr the reviews' sentiment ranges from -1 to 1.5
+
+# Perform sentiment analysis on the review_full column using qdap
+Sys.setenv(JAVA_HOME = "C:/Windows/WinSxS/amd64_microsoft-windows-f..uetype-javanesetext_31bf3856ad364e35_10.0.22621.1_none_5efc0b9e3e2fdb16/javatext.ttf")
+library(qdap)
+
+polarity_score_review_full <- polarity(RestaurantReviews$review_full)
+polaritymatrix <- (counts(polarity_score_review_full))
+RestaurantReviews$polarity_score_review_full <-as.numeric(polaritymatrix[,3])
+summary(RestaurantReviews$polarity_score_review_full) 
+# using qdap the polarity scores for review full change a bit, while the minimum remains the same, now the maximum polarity score is 2.8
+
+# performing sentiment analysis on the title_review column using qdap
+polarity_score_title_review <- polarity(RestaurantReviews$title_review)
+polaritymatrix_tit <- (counts(polarity_score_title_review))
+RestaurantReviews$polarity_score_title_review <-as.numeric(polaritymatrix_tit[,3])
+summary(RestaurantReviews$polarity_score_title_review) 
+# using qdap the polarity scoresfor title review are -1.9 as minim value and 3.6 as maximum value 
+
+#correlation between polarities 
+cor(RestaurantReviews$polarity_score_review_full, RestaurantReviews$sentiment_score_review_full) 
+# 0.71 highly correlated 
+
+
+## Step 3: Investigate the relationship between sentiment and restaurant rating
+
+#correlation between sentiment and restaurant rating
+cor(RestaurantReviews$rating_review, RestaurantReviews$sentiment_score_review_full) # 0.33
+cor(RestaurantReviews$rating_review, RestaurantReviews$sentiment_score_title_review) # 0.27
+
+
+## There is a slight correlation between sentiment score and restaurant rating as well as sentiment title and rating. This simple statistical test can be used to have an overview on the relationship between these two scores. 
+
+# describe and plot polarity score 
+hist(RestaurantReviews$sentiment_score_review_full) # the sentiment score is normally distributed 
+boxplot(sentiment_score_review_full ~ rating_review, data = RestaurantReviews, main = "polaty score per review", xlab = "rating", ylab = "polarity score ") 
+
+
+# As already anticipated by the correlation analysis, the higher the rating, the higher the polarity score, however from the boxplot it is interesting to see that while reviews rating 4 have very high positive outliers, for the 5 star reviews, outliers are not only positive but also very negative ones.
+
+RestaurantReviews$date <- as.Date(RestaurantReviews$date)
+
+RestaurantReviews$year <- format(RestaurantReviews$date, "%Y")
+
+
+ggplot(RestaurantReviews, aes(x = year, y = sentiment_score_review_full, fill = factor(rating_review))) +
+  geom_bar(stat = "summary", fun = "mean", position = "dodge") +
+  labs(x = "Year", y = "Mean Sentiment", fill = "Rating") +
+  ggtitle("Mean Sentiment by Rating Grouped by Year") +
+  facet_wrap(~ rating_review, ncol = 2) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# while plotting sentiment and rating throughout the years, no specific pattern stands out 
+
+# The histogram above shows the mean sentiment per year for different star scores. Although this type of graph might be idea to visualize positive and negative polarities, it gives and overview of the polarity of the different star scores throughout the years. What stands out from this graph is that positive polarity for 4 and 5 star scores tend to slightly diminish over time whereas it remains stable in 3 star scores. It tends to be only negative for 1 star scores and it seems to be slightly increasing for 2 star scores. Overall, it can be seen the increase in polarity as the the star rating increases.
+
+
+## Step 4: regression model to investigate the relationship sentiment score and restaurant rating
+
+library(fixest)
+library(lubridate)
+
+# Convert the date column to Date format
+RestaurantReviews$date <- as.Date(RestaurantReviews$date)
+
+# Extract day of the week, month, and year of the review
+RestaurantReviews$day <- wday(RestaurantReviews$date)
+RestaurantReviews$month <- month(RestaurantReviews$date)
+RestaurantReviews$year <- year(RestaurantReviews$date)
+
+# Estimate linear regression model
+model <- feols(rating_review ~ sentiment_score_review_full | restaurant_name + day + month + year, data = RestaurantReviews) 
+
+# in this regression model rating review is the dependent variable while sentiment_score is the independent variables. This model takes into account the name of the restaurant for duplicates and the date in which the review was written.
+
+
+# View summary of the model
+summary(model)
+
+# Taking into account potential confounding factors (restaurant name and the date), the sentiment of the full review is highly significant (p < 0.05) 
+
+
+## Step 5: extending the model to investigate the effect of the day of the week
+
+
+# Fit a linear regression model to understand the impact of the day of the week 
+model_day <- feols(rating_review ~ sentiment_score_review_full + day | restaurant_name + month + year, data = RestaurantReviews)
+
+summary(model_day)
+# For this second model, the day of the week is considered as dependent variable together with the sentiment, however from the regression it can be seen that the day of the week is not significant in explaining variations of the ratings
+
+
+# Fit a linear regression model 
+model_all_variables <- lm(rating_review ~ sentiment_score_review_full * wday(date) + month(date) + year(date) + nchar_tit + nchar_rev, data = RestaurantReviews)
+
+# View the summary of the model
+summary(model_all_variables)
